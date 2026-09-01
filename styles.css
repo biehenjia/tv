@@ -1,0 +1,50 @@
+/* Drag-hover feedback reuses Obsidian's own .is-being-dragged-over class (see
+   app.css), no custom styling needed since this plugin doesn't support
+   manual reordering (see core/operations.ts's sortTree: dragging only ever
+   resolves scope, matching core File Explorer). */
+
+/* ItemView's default .view-content has padding core File Explorer's own
+   view-content doesn't (it zeroes it out itself) — without this our tree
+   sits visibly inset from the pane edges compared to the real explorer. */
+.workspace-leaf-content[data-type="tree-view-pane"] .view-content,
+.workspace-leaf-content[data-type="tag-browser-pane"] .view-content {
+  padding: 0;
+}
+
+.tree-view-empty-state {
+  padding: var(--size-4-4);
+}
+
+/* Core's own .nav-header assumes a single row (its buttons-container);
+   this pane stacks the search bar above that row, so give the search row
+   its own bottom margin instead of relying on nav-header's padding alone. */
+.tree-view-search-row {
+  margin-bottom: var(--size-4-2);
+}
+
+/* Core's row layout puts the collapse-icon at position:absolute, pulled
+   left via a negative margin into a left-padding "gutter" every row (leaf
+   or parent) reserves via --nav-item-padding/--nav-item-parent-padding —
+   that only lines an icon up with anything if every row shares an
+   identical reserved gutter, which depends on those two theme variables
+   matching. Rather than depend on that: the icon stays position:absolute
+   (core relies on that for its own flex sizing — making it a real in-flow
+   item once squeezed the label out entirely) but gets an explicit fixed
+   inset-inline-start instead of a margin computed off wherever its own
+   row's padding happens to be — .tree-item-self is already `position:
+   relative`, so this pins every icon at the exact same x regardless of
+   which row it's in. Leaf rows' text then starts at that same x (nothing
+   reserved ahead of it); parent rows' text gets pushed right of the icon
+   by its own padding-inline-start instead — the two are independent now,
+   so they can align at the icon without also colliding into it. */
+.tag-browser-pane-content .tree-item-self.tag-pane-tag {
+  padding-inline-start: var(--size-4-2);
+}
+.tag-browser-pane-content .tree-item-self.tag-pane-tag.mod-collapsible {
+  padding-inline-start: calc(var(--size-4-2) + var(--size-4-4) + var(--size-4-1));
+}
+.tag-browser-pane-content .tree-item-self .tree-item-icon.collapse-icon {
+  margin-inline-start: 0;
+  inset-inline-start: var(--size-4-2);
+}
+

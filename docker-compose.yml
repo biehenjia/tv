@@ -1,0 +1,12 @@
+services:
+  node:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      # named volume so node_modules lives inside the container/OrbStack VM,
+      # never on the host filesystem
+      - node_modules:/app/node_modules
+
+volumes:
+  node_modules:
