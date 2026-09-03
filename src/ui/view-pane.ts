@@ -160,8 +160,8 @@ export class TreeViewPane extends ItemView {
     // Header is built once and never torn down by renderTree() — the
     // search input needs to survive re-renders while the user is mid-typing
     // (see the searchComponent field's doc comment).
-    const header = container.createEl("div", { cls: "nav-header tree-view-toolbar" });
-    const searchRow = header.createEl("div", { cls: "tree-view-search-row" });
+    const header = container.createDiv({ cls: "nav-header tree-view-toolbar" });
+    const searchRow = header.createDiv({ cls: "tree-view-search-row" });
     this.searchComponent = new SearchComponent(searchRow);
     this.searchComponent.setPlaceholder("Switch tag root...");
     new TagRootInputSuggest(
@@ -172,13 +172,13 @@ export class TreeViewPane extends ItemView {
     );
     this.updateSearchValue();
 
-    const toolbar = header.createEl("div", { cls: "nav-buttons-container" });
+    const toolbar = header.createDiv({ cls: "nav-buttons-container" });
     const addButton = this.createToolbarIconButton(toolbar, "folder-input", "Add file");
     addButton.addEventListener("click", () => this.openAddPicker());
     const groupButton = this.createToolbarIconButton(toolbar, "folder-plus", "New group");
     groupButton.addEventListener("click", () => this.createGroup());
 
-    this.filesContainerEl = container.createEl("div", { cls: "nav-files-container" });
+    this.filesContainerEl = container.createDiv({ cls: "nav-files-container" });
 
     // The tree is always a live read of the vault's current tags — rather
     // than each mutation guessing when it's safe to re-render, one
@@ -237,7 +237,7 @@ export class TreeViewPane extends ItemView {
           : workspace.getLeaf("split", "vertical");
     await target.setViewState({ type: TREE_VIEW_TYPE, active: true, state });
     originLeaf.detach();
-    workspace.revealLeaf(target);
+    void workspace.revealLeaf(target);
   }
 
   /** Which tagPath "+ Add file"/"+ New group" should target: the single
@@ -381,7 +381,7 @@ export class TreeViewPane extends ItemView {
   }
 
   private createToolbarIconButton(parentEl: HTMLElement, icon: string, label: string): HTMLElement {
-    const button = parentEl.createEl("div", { cls: "clickable-icon tree-view-toolbar-icon" });
+    const button = parentEl.createDiv({ cls: "clickable-icon tree-view-toolbar-icon" });
     button.setAttr("aria-label", label);
     setIcon(button, icon);
     return button;
@@ -393,7 +393,7 @@ export class TreeViewPane extends ItemView {
    * needs no custom CSS. Enter/blur commit; Escape cancels. */
   private renderInlineRename(titleEl: HTMLElement, currentLabel: string, node: GroupNode, parentScope: string) {
     titleEl.addClass("is-being-renamed");
-    const label = titleEl.createEl("div", {
+    const label = titleEl.createDiv({
       cls: "tree-item-inner nav-folder-title-content",
       text: currentLabel,
     });
@@ -410,7 +410,7 @@ export class TreeViewPane extends ItemView {
       }
     });
     label.addEventListener("blur", () => this.commitInlineRename(node, label.textContent ?? "", parentScope));
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       label.focus();
       const range = document.createRange();
       range.selectNodeContents(label);
@@ -462,8 +462,8 @@ export class TreeViewPane extends ItemView {
     this.scopeById = new Map();
 
     if (!this.rootTag) {
-      const empty = filesContainer.createEl("div", { cls: "tree-view-empty-state" });
-      const prompt = empty.createEl("div", { cls: "clickable-icon", text: "Pick a tag to start this view..." });
+      const empty = filesContainer.createDiv({ cls: "tree-view-empty-state" });
+      const prompt = empty.createDiv({ cls: "clickable-icon", text: "Pick a tag to start this view..." });
       prompt.addEventListener("click", () => this.focusSearch());
       this.realTagPaths = new Set();
       this.lastRootNodes = [];
@@ -507,13 +507,13 @@ export class TreeViewPane extends ItemView {
   }
 
   private renderFile(parentEl: HTMLElement, node: Extract<VirtualNode, { kind: "file" }>) {
-    const item = parentEl.createEl("div", { cls: "tree-item nav-file" });
-    const title = item.createEl("div", { cls: "tree-item-self is-clickable nav-file-title" });
+    const item = parentEl.createDiv({ cls: "tree-item nav-file" });
+    const title = item.createDiv({ cls: "tree-item-self is-clickable nav-file-title" });
     if (this.selected.has(node.id)) title.addClass("is-selected");
     title.setAttr("draggable", "true");
     title.setAttr("data-path", node.path);
     title.dataset.nodeId = node.id;
-    title.createEl("div", {
+    title.createDiv({
       cls: "tree-item-inner nav-file-title-content",
       text: basename(node.path),
     });
@@ -531,9 +531,9 @@ export class TreeViewPane extends ItemView {
     const isCollapsed = this.collapsed.has(node.id);
     const isEditing = this.editingNodeId === node.id;
 
-    const item = parentEl.createEl("div", { cls: "tree-item nav-folder" });
+    const item = parentEl.createDiv({ cls: "tree-item nav-folder" });
     if (isCollapsed) item.addClass("is-collapsed");
-    const title = item.createEl("div", {
+    const title = item.createDiv({
       cls: "tree-item-self is-clickable mod-collapsible nav-folder-title",
     });
     if (this.selected.has(node.id)) title.addClass("is-selected");
@@ -547,14 +547,14 @@ export class TreeViewPane extends ItemView {
     title.setAttr("data-path", node.tagPath);
     title.dataset.nodeId = node.id;
 
-    const collapseIcon = title.createEl("div", { cls: "tree-item-icon collapse-icon" });
+    const collapseIcon = title.createDiv({ cls: "tree-item-icon collapse-icon" });
     if (isCollapsed) collapseIcon.addClass("is-collapsed");
     setIcon(collapseIcon, "right-triangle");
 
     if (isEditing) {
       this.renderInlineRename(title, node.label, node, parentScope);
     } else {
-      title.createEl("div", {
+      title.createDiv({
         cls: "tree-item-inner nav-folder-title-content",
         text: node.label,
       });
@@ -566,7 +566,7 @@ export class TreeViewPane extends ItemView {
     });
 
     if (!isCollapsed) {
-      const childrenEl = item.createEl("div", { cls: "tree-item-children nav-folder-children" });
+      const childrenEl = item.createDiv({ cls: "tree-item-children nav-folder-children" });
       this.renderNodes(childrenEl, node.children, node.tagPath);
     }
   }

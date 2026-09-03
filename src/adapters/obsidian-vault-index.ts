@@ -25,7 +25,7 @@ function toFileMeta(app: App, path: string): FileMeta | undefined {
   }
   if (af instanceof TFile) {
     const cache = app.metadataCache.getFileCache(af);
-    const frontmatterTags = cache?.frontmatter?.tags;
+    const frontmatterTags: unknown = cache?.frontmatter?.tags;
     const tags = Array.isArray(frontmatterTags) ? [...new Set(frontmatterTags.map(String))] : [];
     return {
       path: af.path,

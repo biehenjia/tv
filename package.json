@@ -1,17 +1,19 @@
 {
   "name": "tree-view",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Multiple editable file-explorer views over the same vault tree.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint src"
   },
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "builtin-modules": "^3.3.0",
     "esbuild": "^0.20.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "latest",
     "tslib": "2.6.2",
     "typescript": "^5.3.3"

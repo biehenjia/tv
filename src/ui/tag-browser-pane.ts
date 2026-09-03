@@ -76,7 +76,7 @@ export class TagBrowserPane extends ItemView {
   }
 
   private createToolbarIconButton(parentEl: HTMLElement, icon: string, label: string): HTMLElement {
-    const button = parentEl.createEl("div", { cls: "clickable-icon tree-view-toolbar-icon" });
+    const button = parentEl.createDiv({ cls: "clickable-icon tree-view-toolbar-icon" });
     button.setAttr("aria-label", label);
     setIcon(button, icon);
     return button;
@@ -115,17 +115,17 @@ export class TagBrowserPane extends ItemView {
 
     const tree = sortTagTree(buildTagTree(this.deps.index), this.sortOrder);
 
-    const header = container.createEl("div", { cls: "nav-header tree-view-toolbar" });
-    const toolbar = header.createEl("div", { cls: "nav-buttons-container" });
+    const header = container.createDiv({ cls: "nav-header tree-view-toolbar" });
+    const toolbar = header.createDiv({ cls: "nav-buttons-container" });
     const collapseButton = this.createToolbarIconButton(toolbar, "chevrons-down-up", "Collapse all");
     collapseButton.addEventListener("click", () => this.toggleCollapseAll(tree));
     const sortLabel = SORT_ORDERS.find((s) => s.order === this.sortOrder)?.label ?? "";
     const sortButton = this.createToolbarIconButton(toolbar, "arrow-up-narrow-wide", `Change sort order (${sortLabel})`);
     sortButton.addEventListener("click", () => this.cycleSortOrder());
 
-    const tagContainer = container.createEl("div", { cls: "tag-container" });
+    const tagContainer = container.createDiv({ cls: "tag-container" });
     if (tree.length === 0) {
-      tagContainer.createEl("div", { cls: "pane-empty", text: "No tags yet." });
+      tagContainer.createDiv({ cls: "pane-empty", text: "No tags yet." });
       return;
     }
     this.renderNodes(tagContainer, tree);
@@ -139,14 +139,14 @@ export class TagBrowserPane extends ItemView {
     const hasChildren = node.children.length > 0;
     const isCollapsed = this.collapsed.has(node.tag);
 
-    const item = parentEl.createEl("div", { cls: "tree-item" });
+    const item = parentEl.createDiv({ cls: "tree-item" });
     if (isCollapsed) item.addClass("is-collapsed");
-    const title = item.createEl("div", {
+    const title = item.createDiv({
       cls: `tree-item-self is-clickable tag-pane-tag${hasChildren ? " mod-collapsible" : ""}`,
     });
 
     if (hasChildren) {
-      const collapseIcon = title.createEl("div", { cls: "tree-item-icon collapse-icon" });
+      const collapseIcon = title.createDiv({ cls: "tree-item-icon collapse-icon" });
       if (isCollapsed) collapseIcon.addClass("is-collapsed");
       setIcon(collapseIcon, "right-triangle");
       collapseIcon.addEventListener("click", (ev) => {
@@ -157,16 +157,16 @@ export class TagBrowserPane extends ItemView {
       });
     }
 
-    title.createEl("div", { cls: "tree-item-inner-text", text: node.label });
+    title.createDiv({ cls: "tree-item-inner-text", text: node.label });
     if (node.count > 0) {
-      const flair = title.createEl("div", { cls: "tree-item-flair-outer" });
-      flair.createEl("span", { cls: "tag-pane-tag-count tree-item-flair", text: String(node.count) });
+      const flair = title.createDiv({ cls: "tree-item-flair-outer" });
+      flair.createSpan({ cls: "tag-pane-tag-count tree-item-flair", text: String(node.count) });
     }
 
     title.addEventListener("click", () => this.deps.onOpenTag(node.tag));
 
     if (hasChildren && !isCollapsed) {
-      const childrenEl = item.createEl("div", { cls: "tree-item-children" });
+      const childrenEl = item.createDiv({ cls: "tree-item-children" });
       this.renderNodes(childrenEl, node.children);
     }
   }

@@ -8,14 +8,25 @@
 import { App, TFile } from "obsidian";
 import { remapTagPrefix } from "../core/operations";
 
+/** `processFrontMatter` hands the callback an untyped object; treat it as a
+ * bag of unknowns and narrow explicitly rather than trusting `any`. */
+type FrontMatter = Record<string, unknown>;
+
+/** frontmatter `tags` as a string[] — empty when it's absent or not a list. */
+function frontMatterTags(fm: FrontMatter): string[] {
+  const raw = fm.tags;
+  if (!Array.isArray(raw)) return [];
+  return (raw as unknown[]).map((t) => String(t));
+}
+
 export class ObsidianTagWriter {
   constructor(private app: App) {}
 
   async addTag(path: string, tag: string): Promise<void> {
     const file = this.fileAt(path);
     if (!file) return;
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
-      const tags: string[] = Array.isArray(fm.tags) ? fm.tags.map(String) : [];
+    await this.app.fileManager.processFrontMatter(file, (fm: FrontMatter) => {
+      const tags = frontMatterTags(fm);
       if (!tags.includes(tag)) tags.push(tag);
       fm.tags = tags;
     });
@@ -24,9 +35,9 @@ export class ObsidianTagWriter {
   async removeTag(path: string, tag: string): Promise<void> {
     const file = this.fileAt(path);
     if (!file) return;
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: FrontMatter) => {
       if (!Array.isArray(fm.tags)) return;
-      fm.tags = fm.tags.map(String).filter((t: string) => t !== tag);
+      fm.tags = frontMatterTags(fm).filter((t) => t !== tag);
     });
   }
 
@@ -38,13 +49,13 @@ export class ObsidianTagWriter {
   async renameTagPrefix(oldPrefix: string, newPrefix: string): Promise<void> {
     for (const file of this.app.vault.getMarkdownFiles()) {
       const cache = this.app.metadataCache.getFileCache(file);
-      const tags = cache?.frontmatter?.tags;
+      const tags: unknown = cache?.frontmatter?.tags;
       if (!Array.isArray(tags)) continue;
       const touched = tags.map(String).some((t) => t === oldPrefix || t.startsWith(`${oldPrefix}/`));
       if (!touched) continue;
-      await this.app.fileManager.processFrontMatter(file, (fm) => {
+      await this.app.fileManager.processFrontMatter(file, (fm: FrontMatter) => {
         if (!Array.isArray(fm.tags)) return;
-        fm.tags = fm.tags.map((t: unknown) => remapTagPrefix(String(t), oldPrefix, newPrefix));
+        fm.tags = frontMatterTags(fm).map((t) => remapTagPrefix(t, oldPrefix, newPrefix));
       });
     }
   }
@@ -55,13 +66,13 @@ export class ObsidianTagWriter {
   async removeTagPrefix(prefix: string): Promise<void> {
     for (const file of this.app.vault.getMarkdownFiles()) {
       const cache = this.app.metadataCache.getFileCache(file);
-      const tags = cache?.frontmatter?.tags;
+      const tags: unknown = cache?.frontmatter?.tags;
       if (!Array.isArray(tags)) continue;
       const touched = tags.map(String).some((t) => t === prefix || t.startsWith(`${prefix}/`));
       if (!touched) continue;
-      await this.app.fileManager.processFrontMatter(file, (fm) => {
+      await this.app.fileManager.processFrontMatter(file, (fm: FrontMatter) => {
         if (!Array.isArray(fm.tags)) return;
-        fm.tags = fm.tags.map(String).filter((t: string) => t !== prefix && !t.startsWith(`${prefix}/`));
+        fm.tags = frontMatterTags(fm).filter((t) => t !== prefix && !t.startsWith(`${prefix}/`));
       });
     }
   }
