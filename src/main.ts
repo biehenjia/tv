@@ -50,10 +50,10 @@ export default class TreeViewPlugin extends Plugin {
     });
   }
 
-  onunload() {
-    this.app.workspace.detachLeavesOfType(TREE_VIEW_TYPE);
-    this.app.workspace.detachLeavesOfType(TAG_BROWSER_VIEW_TYPE);
-  }
+  // No onunload(): registerView already unregisters the view factories, and
+  // Obsidian restores open leaves of an unregistered type once the plugin
+  // reloads. Detaching them here would wipe the user's layout on every
+  // update. See https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines
 
   /** Reveal/create the tag view pane (the one that lives in the sidebar
    * like core Bookmarks — reveals whichever one is already open regardless
