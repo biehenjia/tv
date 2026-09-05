@@ -2,6 +2,12 @@
    app.css), no custom styling needed since this plugin doesn't support
    manual reordering (see core/operations.ts's sortTree: dragging only ever
    resolves scope, matching core File Explorer). */
+.tree-view-pane-content
+  .nav-folder.is-being-dragged-over
+  > .nav-folder-title {
+  background-color: var(--nav-item-background-hover);
+  color: var(--nav-item-color-hover);
+}
 
 /* ItemView's default .view-content has padding core File Explorer's own
    view-content doesn't (it zeroes it out itself) — without this our tree
@@ -47,4 +53,3 @@
   margin-inline-start: 0;
   inset-inline-start: var(--size-4-2);
 }
-

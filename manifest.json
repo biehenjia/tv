@@ -1,7 +1,7 @@
 {
   "id": "tree-view",
   "name": "Tree View",
-  "version": "0.1.1",
+	"version": "0.2.0",
   "minAppVersion": "1.7.2",
   "description": "Create multiple editable file-explorer views that reference the vault's real file tree, without altering it.",
   "author": "biehenjia",

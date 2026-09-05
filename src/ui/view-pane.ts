@@ -64,9 +64,6 @@ export class TreeViewPane extends ItemView {
    * render; used to resolve shift-click range selection. */
   private renderOrder: string[] = [];
   private nodesById = new Map<string, VirtualNode>();
-  /** Each node's enclosing tag path (its parent group's tagPath, or the
-   * root tag for top-level nodes), rebuilt every render. */
-  private scopeById = new Map<string, string>();
   /** tagPaths that came from resolveTagRootView (i.e. at least one real
    * file has that tag) — distinguishes a real branch (rename = bulk tag
    * mutation) from a still-empty pending one (rename = local state only). */
@@ -142,11 +139,42 @@ export class TreeViewPane extends ItemView {
   async onOpen() {
     const container = this.contentEl;
     container.tabIndex = -1;
+    container.setAttr("role", "tree");
     container.addClass("tree-view-pane-content");
     container.addEventListener("keydown", (ev) => {
+      const target = ev.target as HTMLElement;
+      if (target.matches("input, textarea, [contenteditable='true']")) return;
       if ((ev.key === "Delete" || ev.key === "Backspace") && this.selected.size > 0) {
         ev.preventDefault();
         this.removeFromView([...this.selected]);
+      } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "a") {
+        ev.preventDefault();
+        this.selected = new Set(this.renderOrder);
+        this.selectionAnchorId = this.renderOrder.at(-1);
+        this.renderTree();
+      } else if (ev.key === "Escape" && this.selected.size > 0) {
+        ev.preventDefault();
+        this.clearSelection();
+        this.renderTree();
+      } else if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+        ev.preventDefault();
+        this.moveKeyboardSelection(ev.key === "ArrowDown" ? 1 : -1, ev.shiftKey);
+      } else if (ev.key === "Enter" && this.selected.size === 1) {
+        ev.preventDefault();
+        this.activateSelectedNode();
+      } else if (ev.key === "F2" && this.selected.size === 1) {
+        const node = this.nodesById.get([...this.selected][0]);
+        if (node?.kind === "group") {
+          ev.preventDefault();
+          this.editingNodeId = node.id;
+          this.renderTree();
+        }
+      }
+    });
+    container.addEventListener("click", (ev) => {
+      if (!(ev.target as HTMLElement).closest(".tree-item-self")) {
+        this.clearSelection();
+        this.renderTree();
       }
     });
     container.addEventListener("dragleave", (ev) => {
@@ -187,6 +215,8 @@ export class TreeViewPane extends ItemView {
     // ObsidianVaultIndex.onChange's doc comment on why it's metadataCache's
     // "changed" event specifically, not vault's "modify").
     this.unsubscribeIndex = this.deps.index.onChange(() => this.renderTree());
+    this.registerEvent(this.app.workspace.on("file-open", () => this.renderTree()));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.renderTree()));
     this.renderTree();
   }
 
@@ -319,28 +349,89 @@ export class TreeViewPane extends ItemView {
     this.selected = new Set(this.renderOrder.slice(lo, hi + 1));
   }
 
+  private clearSelection() {
+    this.selected.clear();
+    this.selectionAnchorId = undefined;
+  }
+
+  private moveKeyboardSelection(delta: -1 | 1, extend: boolean) {
+    if (this.renderOrder.length === 0) return;
+    const currentId = [...this.selected].at(-1);
+    const currentIndex = currentId ? this.renderOrder.indexOf(currentId) : -1;
+    const fallback = delta === 1 ? 0 : this.renderOrder.length - 1;
+    const nextIndex = currentIndex === -1 ? fallback : Math.max(0, Math.min(this.renderOrder.length - 1, currentIndex + delta));
+    const nextId = this.renderOrder[nextIndex];
+    if (extend && this.selectionAnchorId) this.selectRange(this.selectionAnchorId, nextId);
+    else {
+      this.selected = new Set([nextId]);
+      this.selectionAnchorId = nextId;
+    }
+    this.renderTree();
+    this.filesContainerEl?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(nextId)}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+
+  private activateSelectedNode() {
+    const id = [...this.selected][0];
+    const node = this.nodesById.get(id);
+    if (!node) return;
+    if (node.kind === "file") void this.openFile(node.path, false);
+    else {
+      if (this.collapsed.has(id)) this.collapsed.delete(id);
+      else this.collapsed.add(id);
+      this.renderTree();
+    }
+  }
+
   private handleItemClick(ev: MouseEvent, node: VirtualNode) {
-    if (ev.shiftKey && this.selectionAnchorId) {
+    // A custom ItemView does not inherit File Explorer's event controller
+    // merely by using its CSS classes. Keep the row click from bubbling to
+    // Workspace's leaf-activation handler; otherwise that handler activates
+    // this sidebar after we dispatch the file open, making the first click
+    // look like it only focused the pane.
+    ev.stopPropagation();
+    if (node.kind === "file" && (ev.metaKey || ev.ctrlKey)) {
+      ev.preventDefault();
+      void this.openFile(node.path, true);
+    } else if (ev.shiftKey && this.selectionAnchorId) {
       this.selectRange(this.selectionAnchorId, node.id);
-    } else if (ev.metaKey || ev.ctrlKey) {
-      if (this.selected.has(node.id)) this.selected.delete(node.id);
-      else this.selected.add(node.id);
-      this.selectionAnchorId = node.id;
     } else if (node.kind === "file") {
-      this.selected = new Set();
+      this.selected = new Set([node.id]);
       this.selectionAnchorId = node.id;
-      void this.app.workspace.openLinkText(node.path, "", false);
+      void this.openFile(node.path, false);
     } else {
       this.selected = new Set([node.id]);
       this.selectionAnchorId = node.id;
       if (this.collapsed.has(node.id)) this.collapsed.delete(node.id);
       else this.collapsed.add(node.id);
     }
-    this.contentEl.focus();
     this.renderTree();
   }
 
+  /** Open into the main editor area even when this view lives in a sidebar.
+   * Workspace.getMostRecentLeaf(rootSplit) exists specifically for this
+   * case; relying on openLinkText's implicit destination lets the sidebar's
+   * own click activation win and produces an apparent two-click open. */
+  private async openFile(path: string, newTab: boolean) {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return;
+    const workspace = this.app.workspace;
+    const destination = newTab
+      ? workspace.getLeaf("tab")
+      : (workspace.getMostRecentLeaf(workspace.rootSplit) ?? workspace.getLeaf(false));
+    await destination.openFile(file);
+    workspace.setActiveLeaf(destination, { focus: true });
+  }
+
   private openContextMenu(ev: MouseEvent, node: VirtualNode) {
+    ev.preventDefault();
+    // Explorer-style context clicking: preserve an existing multi-selection
+    // when clicking one of its rows; otherwise make the clicked row the
+    // selection so every menu command has an unsurprising target.
+    if (!this.selected.has(node.id)) {
+      this.selected = new Set([node.id]);
+      this.selectionAnchorId = node.id;
+      this.renderTree();
+    }
     const isMultiSelection = this.selected.size > 1 && this.selected.has(node.id);
 
     const menu = new Menu();
@@ -349,7 +440,7 @@ export class TreeViewPane extends ItemView {
         item
           .setTitle("Open in new tab")
           .setIcon("file-plus")
-          .onClick(() => void this.app.workspace.openLinkText(node.path, "", true)),
+          .onClick(() => void this.openFile(node.path, true)),
       );
     }
     if (node.kind === "group" && !isMultiSelection) {
@@ -363,20 +454,13 @@ export class TreeViewPane extends ItemView {
           }),
       );
     }
+    const targets = isMultiSelection ? [...this.selected] : [node.id];
     menu.addItem((item) =>
       item
-        .setTitle("Remove from view")
+        .setTitle(isMultiSelection ? `Remove ${targets.length} items from view` : "Remove from view")
         .setIcon("x")
-        .onClick(() => this.removeFromView([node.id])),
+        .onClick(() => this.removeFromView(targets)),
     );
-    if (isMultiSelection && this.selected.size > 1) {
-      menu.addItem((item) =>
-        item
-          .setTitle(`Remove ${this.selected.size} items from view`)
-          .setIcon("x")
-          .onClick(() => this.removeFromView([...this.selected])),
-      );
-    }
     menu.showAtMouseEvent(ev);
   }
 
@@ -459,7 +543,6 @@ export class TreeViewPane extends ItemView {
 
     this.renderOrder = [];
     this.nodesById = new Map();
-    this.scopeById = new Map();
 
     if (!this.rootTag) {
       const empty = filesContainer.createDiv({ cls: "tree-view-empty-state" });
@@ -480,6 +563,12 @@ export class TreeViewPane extends ItemView {
     this.lastRootNodes = nodes;
 
     this.renderNodes(filesContainer, nodes, this.rootTag);
+    // Vault changes can remove rows while retaining this view instance.
+    // Never leave invisible nodes selected or usable by later commands.
+    this.selected = new Set([...this.selected].filter((id) => this.nodesById.has(id)));
+    if (this.selectionAnchorId && !this.nodesById.has(this.selectionAnchorId)) {
+      this.selectionAnchorId = undefined;
+    }
   }
 
   private collectTagPaths(nodes: VirtualNode[]): string[] {
@@ -497,7 +586,6 @@ export class TreeViewPane extends ItemView {
     for (const node of nodes) {
       this.renderOrder.push(node.id);
       this.nodesById.set(node.id, node);
-      this.scopeById.set(node.id, scope);
       if (node.kind === "file") {
         this.renderFile(parentEl, node);
       } else {
@@ -510,6 +598,9 @@ export class TreeViewPane extends ItemView {
     const item = parentEl.createDiv({ cls: "tree-item nav-file" });
     const title = item.createDiv({ cls: "tree-item-self is-clickable nav-file-title" });
     if (this.selected.has(node.id)) title.addClass("is-selected");
+    if (this.app.workspace.getActiveFile()?.path === node.path) title.addClass("is-active");
+    title.setAttr("role", "treeitem");
+    title.setAttr("aria-selected", String(this.selected.has(node.id)));
     title.setAttr("draggable", "true");
     title.setAttr("data-path", node.path);
     title.dataset.nodeId = node.id;
@@ -518,12 +609,26 @@ export class TreeViewPane extends ItemView {
       text: basename(node.path),
     });
 
-    title.addEventListener("click", (ev) => this.handleItemClick(ev, node));
+    // Match the working sidebar explorer pattern in ../onyx: pointerup
+    // opens before Obsidian can rerender/activate the sidebar, while
+    // pointerdown remains available to initiate a drag.
+    title.addEventListener("pointerup", (ev) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.handleItemClick(ev, node);
+    });
+    // Keyboard activation produces a click without a pointer event.
+    title.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (ev.detail === 0) this.handleItemClick(ev, node);
+    });
     title.addEventListener("contextmenu", (ev) => this.openContextMenu(ev, node));
     title.addEventListener("dragstart", (ev) => {
       const af = this.app.vault.getAbstractFileByPath(node.path);
       if (af) startObsidianDrag(this.app, ev, af, "tree-view");
-      ev.dataTransfer?.setData(INTERNAL_DRAG_TYPE, node.id);
+      this.prepareInternalDrag(ev, node.id);
     });
   }
 
@@ -532,11 +637,15 @@ export class TreeViewPane extends ItemView {
     const isEditing = this.editingNodeId === node.id;
 
     const item = parentEl.createDiv({ cls: "tree-item nav-folder" });
+    item.dataset.dropTagPath = node.tagPath;
     if (isCollapsed) item.addClass("is-collapsed");
     const title = item.createDiv({
       cls: "tree-item-self is-clickable mod-collapsible nav-folder-title",
     });
     if (this.selected.has(node.id)) title.addClass("is-selected");
+    title.setAttr("role", "treeitem");
+    title.setAttr("aria-selected", String(this.selected.has(node.id)));
+    title.setAttr("aria-expanded", String(!isCollapsed));
     title.setAttr("draggable", isEditing ? "false" : "true");
     // File rows carry a real vault path in data-path, which themes (e.g.
     // AnuPpuccin, see the class's header comment) key their per-row icon
@@ -562,7 +671,7 @@ export class TreeViewPane extends ItemView {
     }
     title.addEventListener("contextmenu", (ev) => this.openContextMenu(ev, node));
     title.addEventListener("dragstart", (ev) => {
-      ev.dataTransfer?.setData(INTERNAL_DRAG_TYPE, node.id);
+      this.prepareInternalDrag(ev, node.id);
     });
 
     if (!isCollapsed) {
@@ -571,33 +680,30 @@ export class TreeViewPane extends ItemView {
     }
   }
 
-  private findRowAtY(clientY: number): HTMLElement | null {
-    const rows = this.contentEl.querySelectorAll<HTMLElement>(".tree-item-self");
-    for (const row of Array.from(rows)) {
-      const rect = row.getBoundingClientRect();
-      if (clientY >= rect.top && clientY <= rect.bottom) return row;
-    }
-    return null;
+  /** Like ../onyx's explorer, a folder owns its complete rendered subtree
+   * as a drop region. A pointer over a child file therefore resolves to the
+   * nearest enclosing group rather than highlighting that incidental row. */
+  private dropFolderAt(ev: DragEvent): HTMLElement | null {
+    const pointed = document.elementFromPoint(ev.clientX, ev.clientY);
+    const target = pointed ?? (ev.target instanceof Element ? ev.target : null);
+    return target?.closest<HTMLElement>(".nav-folder[data-drop-tag-path]") ?? null;
   }
 
-  private setDropHover(rowEl: HTMLElement | null) {
-    if (this.dropHoverEl && this.dropHoverEl !== rowEl) {
+  private setDropHover(folderEl: HTMLElement | null) {
+    if (this.dropHoverEl === folderEl) return;
+    if (this.dropHoverEl) {
       this.dropHoverEl.removeClass("is-being-dragged-over");
+      this.dropHoverEl.querySelector(":scope > .nav-folder-title")?.removeClass("is-being-dragged-over");
     }
-    this.dropHoverEl = rowEl;
-    rowEl?.addClass("is-being-dragged-over");
+    this.dropHoverEl = folderEl;
+    if (!folderEl) return;
+    folderEl.addClass("is-being-dragged-over");
+    folderEl.querySelector(":scope > .nav-folder-title")?.addClass("is-being-dragged-over");
   }
 
-  /** Resolve which tag a drop over `rowEl` should target: the row's own
-   * tagPath if it's a group, otherwise that row's enclosing scope — no row
-   * (empty space) means the view's own root tag. */
-  private resolveDropScope(rowEl: HTMLElement | null): string | undefined {
+  private resolveDropScope(folderEl: HTMLElement | null): string | undefined {
     if (!this.rootTag) return undefined;
-    const nodeId = rowEl?.dataset.nodeId;
-    if (!nodeId) return this.rootTag;
-    const node = this.nodesById.get(nodeId);
-    if (node?.kind === "group") return node.tagPath;
-    return this.scopeById.get(nodeId) ?? this.rootTag;
+    return folderEl?.dataset.dropTagPath ?? this.rootTag;
   }
 
   private handleDelegatedDrop(
@@ -605,7 +711,7 @@ export class TreeViewPane extends ItemView {
     draggable: ObsidianDraggable | undefined,
     isDragOver: boolean,
   ): DropResult | undefined {
-    const rowEl = this.findRowAtY(ev.clientY);
+    const folderEl = this.dropFolderAt(ev);
 
     const isInternal = ev.dataTransfer?.types.includes(INTERNAL_DRAG_TYPE) ?? false;
     const externalFiles = filesFromDraggable(draggable);
@@ -616,11 +722,11 @@ export class TreeViewPane extends ItemView {
 
     if (!isDragOver) {
       this.setDropHover(null);
-      this.performDrop(ev, isInternal, externalFiles, this.resolveDropScope(rowEl));
+      this.performDrop(ev, isInternal, externalFiles, this.resolveDropScope(folderEl));
       return { dropEffect: "move" };
     }
 
-    this.setDropHover(rowEl);
+    this.setDropHover(folderEl);
     return { dropEffect: "move" };
   }
 
@@ -633,35 +739,69 @@ export class TreeViewPane extends ItemView {
     if (!targetTagPath) return;
 
     if (isInternal) {
-      const draggedId = ev.dataTransfer?.getData(INTERNAL_DRAG_TYPE);
-      if (!draggedId) return;
-      const node = this.nodesById.get(draggedId);
-      if (!node) return;
-
-      if (node.kind === "file") {
-        if (node.sourceTag === targetTagPath) return;
-        void this.deps.tagWriter
-          .removeTag(node.path, node.sourceTag)
-          .then(() => this.deps.tagWriter.addTag(node.path, targetTagPath));
-      } else {
-        if (targetTagPath === node.tagPath || targetTagPath.startsWith(`${node.tagPath}/`)) return;
-        const newTagPath = `${targetTagPath}/${node.label}`;
-        if (newTagPath === node.tagPath) return;
-        if (this.realTagPaths.has(node.tagPath)) {
-          void this.deps.tagWriter.renameTagPrefix(node.tagPath, newTagPath);
-        } else {
-          this.pendingGroups = this.pendingGroups.map((p) =>
-            p.group.tagPath === node.tagPath
-              ? { parentTagPath: targetTagPath, group: { ...p.group, id: `group:${newTagPath}`, tagPath: newTagPath } }
-              : p,
-          );
-          this.renderTree();
-        }
+      const raw = ev.dataTransfer?.getData(INTERNAL_DRAG_TYPE);
+      if (!raw) return;
+      let draggedIds: string[];
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        draggedIds = Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [raw];
+      } catch {
+        draggedIds = [raw];
       }
+      for (const draggedId of draggedIds) this.moveNodeTo(draggedId, targetTagPath);
     } else {
       const files = externalFiles.filter((f): f is TFile => f instanceof TFile);
       if (files.length === 0) return;
       for (const f of files) void this.deps.tagWriter.addTag(f.path, targetTagPath);
+    }
+  }
+
+  private prepareInternalDrag(ev: DragEvent, draggedId: string) {
+    if (!this.selected.has(draggedId)) {
+      this.selected = new Set([draggedId]);
+      this.selectionAnchorId = draggedId;
+    }
+    const selectedNodes = [...this.selected]
+      .map((id) => this.nodesById.get(id))
+      .filter((node): node is VirtualNode => node !== undefined);
+    const selectedGroups = selectedNodes.filter((node): node is GroupNode => node.kind === "group");
+    // A selected group already carries every descendant with its prefix.
+    // Dropping selected descendants separately would perform duplicate or
+    // conflicting tag mutations, so send only top-level selected rows.
+    const topLevelIds = selectedNodes
+      .filter((node) => {
+        const nodeTag = node.kind === "group" ? node.tagPath : node.sourceTag;
+        return !selectedGroups.some(
+          (group) => group.id !== node.id && nodeTag.startsWith(`${group.tagPath}/`),
+        );
+      })
+      .map((node) => node.id);
+    ev.dataTransfer?.setData(INTERNAL_DRAG_TYPE, JSON.stringify(topLevelIds));
+  }
+
+  private moveNodeTo(draggedId: string, targetTagPath: string) {
+    const node = this.nodesById.get(draggedId);
+    if (!node) return;
+    if (node.kind === "file") {
+      if (node.sourceTag === targetTagPath) return;
+      void this.deps.tagWriter
+        .removeTag(node.path, node.sourceTag)
+        .then(() => this.deps.tagWriter.addTag(node.path, targetTagPath));
+      return;
+    }
+
+    if (targetTagPath === node.tagPath || targetTagPath.startsWith(`${node.tagPath}/`)) return;
+    const newTagPath = `${targetTagPath}/${node.label}`;
+    if (newTagPath === node.tagPath) return;
+    if (this.realTagPaths.has(node.tagPath)) {
+      void this.deps.tagWriter.renameTagPrefix(node.tagPath, newTagPath);
+    } else {
+      this.pendingGroups = this.pendingGroups.map((p) =>
+        p.group.tagPath === node.tagPath
+          ? { parentTagPath: targetTagPath, group: { ...p.group, id: `group:${newTagPath}`, tagPath: newTagPath } }
+          : p,
+      );
+      this.renderTree();
     }
   }
 }
